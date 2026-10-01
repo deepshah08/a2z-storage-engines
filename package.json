@@ -1,0 +1,20 @@
+{
+  "name": "a2z-storage-engines",
+  "version": "1.0.0",
+  "description": "Storage Engines, Block by Block — An Explorable Architecture Guide to Database Storage, Page Layouts, Indexes & Transaction Recovery",
+  "main": "index.html",
+  "scripts": {
+    "test": "node tests/audit-all-widgets.js"
+  },
+  "keywords": [
+    "storage-engines",
+    "database-internals",
+    "b-tree",
+    "lsm-tree",
+    "aries",
+    "mvcc",
+    "explorable-explanation"
+  ],
+  "author": "Deep Shah",
+  "license": "MIT"
+}

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage Engines &amp; Database Internals, Block by Block — An Explorable Architectural Guide</title>
+  <meta name="description" content="An interactive, visual field guide to storage engines and database internals: from NAND flash, slotted pages, and B+ trees to LSM compaction, buffer pools, ARIES recovery, and MVCC.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="brand">
+    <span class="badge">CURRICULUM</span>
+    <span class="title">Storage Engines, Block by Block</span>
+  </div>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">◐ Theme</button>
+</header>
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">Interactive Systems Field Guide</p>
+    <h1>Storage Engines &amp; Database Internals, Block by Block</h1>
+    <p class="lede">Synthesizing Alex Petrov (<em>Database Internals</em>), Hellerstein, Stonebraker &amp; Hamilton (<em>Readings in Database Systems</em>), and Mohan (<em>ARIES</em>) into an explorable visual guide. From flash erase-blocks, slotted page layouts, and B+ tree latch crabbing to LSM Leveled compaction, O_DIRECT kernel bypass, ARIES crash recovery, and PostgreSQL MVCC tuple visibility chains.</p>
+    <p class="hero-hint">↓ Scroll through the curriculum or test the live Storage Architecture Tradeoff Arena below.</p>
+  </div>
+  <figure class="viz viz-hero" data-viz="storageHero">
+    <figcaption>Figure 00 — Storage Architecture Tradeoff Arena: Compare Log-Structured Merge-Trees (LSM) against B+ Trees across Write Amplification Factor (WAF), p99 Tail Latency, and read/write workload mixes.</figcaption>
+  </figure>
+</section>
+
+<div class="layout">
+  <nav class="toc" aria-label="Table of contents">
+    <details class="toc-details" open>
+      <summary>Curriculum Index</summary>
+      <ol class="toc-list">
+        <li class="toc-part">Part I · Media &amp; On-Disk Layout</li>
+        <li><a href="#media-flash"><span class="toc-num">01</span><span>Physical Media &amp; NAND Flash</span></a></li>
+        <li><a href="#slotted-page"><span class="toc-num">02</span><span>Slotted Page Architecture</span></a></li>
+        <li><a href="#row-vs-columnar"><span class="toc-num">03</span><span>Row-Oriented vs Columnar</span></a></li>
+        <li><a href="#bitcask"><span class="toc-num">04</span><span>Log-Structured Append: Bitcask</span></a></li>
+
+        <li class="toc-part">Part II · Indexes &amp; Trees</li>
+        <li><a href="#bplus-trees"><span class="toc-num">05</span><span>B+ Trees: Fanout &amp; Page Splits</span></a></li>
+        <li><a href="#latch-crabbing"><span class="toc-num">06</span><span>B-Tree Latch Crabbing</span></a></li>
+        <li><a href="#lsm-trees"><span class="toc-num">07</span><span>LSM-Trees: MemTable &amp; SSTable</span></a></li>
+        <li><a href="#compaction"><span class="toc-num">08</span><span>LSM Compaction: Tiered vs Leveled</span></a></li>
+
+        <li class="toc-part">Part III · Buffer Management &amp; OS I/O</li>
+        <li><a href="#buffer-pool"><span class="toc-num">09</span><span>Buffer Pool &amp; Frame Tables</span></a></li>
+        <li><a href="#eviction-policies"><span class="toc-num">10</span><span>Eviction Policies: LRU-K &amp; 2Q</span></a></li>
+        <li><a href="#direct-io"><span class="toc-num">11</span><span>Direct I/O vs Linux Page Cache</span></a></li>
+
+        <li class="toc-part">Part IV · Recovery &amp; Transactions</li>
+        <li><a href="#steal-force"><span class="toc-num">12</span><span>WAL &amp; STEAL/NO-FORCE Matrix</span></a></li>
+        <li><a href="#aries-recovery"><span class="toc-num">13</span><span>ARIES Crash Recovery</span></a></li>
+        <li><a href="#two-phase-locking"><span class="toc-num">14</span><span>Two-Phase Locking (2PL)</span></a></li>
+        <li><a href="#mvcc"><span class="toc-num">15</span><span>MVCC &amp; Tuple Visibility</span></a></li>
+      </ol>
+    </details>
+  </nav>
+
+  <main class="content">
+
+    <!-- ====================================================================
+         PART I: MEDIA & ON-DISK LAYOUT
+         ==================================================================== -->
+    <header class="part-header">
+      <span class="part-eyebrow">Part I</span>
+      <h2>Media &amp; On-Disk Layout</h2>
+      <p class="part-desc">How physical hardware physics shapes storage engine software. NAND flash erase-before-write constraints, slotted page formats, and columnar columnar vectors.</p>
+    </header>
+
+    <section class="chapter" id="media-flash">
+      <div class="ch-meta"><span class="ch-num">01</span><span class="ch-tag">Storage Physics</span></div>
+      <h3>Physical Storage Media: Flash SSDs, Blocks &amp; Pages</h3>
+      <p>Solid-state drives (SSDs) are built from NAND flash memory cells. Unlike spinning magnetic disks, flash storage has an asymmetric access constraint: data can be read and programmed (written) in <strong>4KB to 16KB Pages</strong>, but pages cannot be overwritten in place. Instead, an entire <strong>Erase Block (typically 2MB to 8MB)</strong> must be erased to electrical charge 1s before any page can be reprogrammed.</p>
+      <p>This creates the Flash Translation Layer (FTL) and <strong>Write Amplification Factor (WAF)</strong>: writing 1 byte of user data can trigger multiple background page copies during garbage collection.</p>
+      <figure class="viz" data-viz="nandFlash">
+        <figcaption>Figure 01 — NAND Flash Block Lifecycle: Program 4KB pages sequentially, mark invalid stale pages upon update, and trigger out-of-place block garbage collection.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="slotted-page">
+      <div class="ch-meta"><span class="ch-num">02</span><span class="ch-tag">Page Format</span></div>
+      <h3>Slotted Page Architecture &amp; Variable-Length Tuples</h3>
+      <p>Modern relational storage engines (PostgreSQL, MySQL InnoDB, SQLite) organize data on disk in fixed-size blocks (typically 8KB or 16KB). Because rows can vary in length (strings, text, arrays), storage engines employ the <strong>Slotted Page Layout</strong>.</p>
+      <p>The page header grows from the top downwards, storing an array of slot pointers: each slot contains the byte <code>offset</code> and <code>length</code> of a tuple. Raw tuple data is written from the bottom of the page upwards. This decouples the physical memory address of a record from its logical <code>RecordID (PageID, SlotIndex)</code>: tuples can be defragmented and shifted in-place without invalidating foreign keys or secondary indexes!</p>
+      <figure class="viz" data-viz="slottedPage">
+        <figcaption>Figure 02 — Slotted Page Disassembly: Allocate variable-length rows from the bottom while slot directory grows downward from the header.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="row-vs-columnar">
+      <div class="ch-meta"><span class="ch-num">03</span><span class="ch-tag">Access Patterns</span></div>
+      <h3>Row-Oriented (NSM) vs. Columnar (PAX / Parquet) Storage</h3>
+      <p>The <strong>N-ary Storage Model (NSM)</strong> stores all attributes of a single row contiguously on disk. This is optimal for OLTP transactions: fetching or inserting an entire row requires reading only a single disk block.</p>
+      <p>However, analytical queries (OLAP) typically scan billions of rows across only two or three columns (e.g. <code>SELECT avg(price) FROM orders WHERE status = 'SHIPPED'</code>). Reading full NSM rows wastes 90%+ of memory bandwidth loading unused columns. <strong>Partition Attributes Across (PAX)</strong> and columnar formats (Parquet, ORC, ClickHouse) store contiguous vectors of the same column, enabling 10x higher compression (Run-Length Encoding, Dictionary Encoding) and SIMD vectorized query execution.</p>
+      <figure class="viz" data-viz="rowVsColumnar">
+        <figcaption>Figure 03 — OLTP vs. OLAP Layout: Inspect memory byte stride and bandwidth waste comparing NSM contiguous rows vs. PAX columnar vectors.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="bitcask">
+      <div class="ch-meta"><span class="ch-num">04</span><span class="ch-tag">Append-Only Logs</span></div>
+      <h3>Log-Structured Append-Only Storage: The Bitcask Model</h3>
+      <p>Bitcask (from Riak) represents the simplest high-performance key-value engine. All writes, updates, and deletes are appended sequentially to the active log file on disk. In-memory, Bitcask maintains a <strong>Keydir Hash Table</strong> mapping every active key to its exact <code>file_id, value_size, value_pos</code>.</p>
+      <p>Because all writes are purely sequential, Bitcask saturates disk write bandwidth with near-zero write amplification. Reads require exactly 1 disk seek directly to the offset. Background merge threads asynchronously compact stale and tombstoned entries into dense consolidated data files.</p>
+      <figure class="viz" data-viz="bitcaskLog">
+        <figcaption>Figure 04 — Bitcask Engine: Append updates and tombstones to disk log, observe in-memory hash pointer updates, and trigger background merge compaction.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ====================================================================
+         PART II: INDEXES & TREES
+         ==================================================================== -->
+    <header class="part-header">
+      <span class="part-eyebrow">Part II</span>
+      <h2>Indexes &amp; Trees</h2>
+      <p class="part-desc">The two fundamental pillars of database indexing: B+ Trees (read-optimized in-place updates) and Log-Structured Merge-Trees (write-optimized out-of-place appends).</p>
+    </header>
+
+    <section class="chapter" id="bplus-trees">
+      <div class="ch-meta"><span class="ch-num">05</span><span class="ch-tag">B+ Tree Core</span></div>
+      <h3>B+ Trees in Depth: Fanout, Balancing &amp; Page Splits</h3>
+      <p>The B+ Tree is a self-balancing N-ary tree where all user data is stored exclusively in leaf nodes. Interior nodes store only separator keys and child pointers, maximizing <strong>Fanout</strong> ($B \approx 100 \text{ to } 500$ children per page). With high fanout, a 4-level B+ tree can index billions of rows with only 3 to 4 page hops from root to leaf!</p>
+      <p>When an inserted key overflows a leaf page beyond its capacity $M$, the node undergoes a <strong>Page Split</strong>: the middle key is promoted to the parent interior node, and leaf siblings are linked via doubly linked pointers for ultra-fast sequential range scans.</p>
+      <figure class="viz" data-viz="bplusTreeSplit">
+        <figcaption>Figure 05 — B+ Tree Interactive Split: Insert keys to overflow leaf capacity, observe middle key promotion to parent interior node, and traverse leaf range pointers.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="latch-crabbing">
+      <div class="ch-meta"><span class="ch-num">06</span><span class="ch-tag">B-Tree Concurrency</span></div>
+      <h3>B-Tree Concurrency: Latch Crabbing &amp; Optimistic Coupling</h3>
+      <p>Databases distinguish between logical <strong>Locks</strong> (held by transactions for ACID isolation until commit) and physical <strong>Latches</strong> (held by threads for microseconds to prevent race conditions on page data structures). To traverse a B-tree concurrently without bottlenecking the root, engines use <strong>Latch Crabbing</strong>:</p>
+      <ul>
+        <li>Acquire latch on parent node.</li>
+        <li>Acquire latch on child node.</li>
+        <li>Check if child is "safe" (will not split on insert, or will not merge on delete). If safe, immediately release latch on parent!</li>
+      </ul>
+      <figure class="viz" data-viz="latchCrabbing">
+        <figcaption>Figure 06 — Latch Crabbing Simulator: Trace concurrent reader and writer threads descending the tree, acquiring child latches, and releasing parent latches.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="lsm-trees">
+      <div class="ch-meta"><span class="ch-num">07</span><span class="ch-tag">LSM Architecture</span></div>
+      <h3>Log-Structured Merge-Trees: MemTable to SSTable</h3>
+      <p>Introduced by O'Neil et al. (1996) and popularized by Bigtable, RocksDB, and Cassandra, the <strong>LSM-Tree</strong> trades read latency for near-unlimited write throughput. Writes are appended to a Write-Ahead Log (WAL) on disk for durability, then inserted into an in-memory sorted structure (the <strong>MemTable</strong>, typically a SkipList or Red-Black Tree).</p>
+      <p>When the MemTable reaches its threshold size (e.g. 64MB), it is frozen into an immutable MemTable and flushed sequentially to disk as an <strong>SSTable (Sorted String Table)</strong>. Reads check the MemTable first, then consult Bloom Filters before probing SSTable disk files.</p>
+      <figure class="viz" data-viz="lsmSstable">
+        <figcaption>Figure 07 — LSM Pipeline: Ingest writes to active MemTable, freeze to immutable state, flush to SSTables on disk, and filter reads via Bloom Filters.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="compaction">
+      <div class="ch-meta"><span class="ch-num">08</span><span class="ch-tag">LSM Compaction</span></div>
+      <h3>Compaction Strategies: Size-Tiered vs. Leveled</h3>
+      <p>Because SSTables are immutable, updates and deletes create duplicate keys and tombstone records scattered across multiple disk files. <strong>Compaction</strong> is the background merge-sort process that unifies SSTables, discards superseded records, and bounds read amplification:</p>
+      <ul>
+        <li><strong>Size-Tiered Compaction (STCS):</strong> Waits for $N$ SSTables of similar size, then merges them into one larger SSTable. Low write amplification, but high temporary disk space overhead (up to 50% space amplification).</li>
+        <li><strong>Leveled Compaction (LCS, RocksDB):</strong> Organizes SSTables into geometric levels (Level 0, Level 1, Level 2) where each level is $10\times$ larger. Within Level 1+, SSTable key ranges are strictly non-overlapping. Lower space amplification ($\approx 10\%$) and faster point lookups, but higher write amplification.</li>
+      </ul>
+      <figure class="viz" data-viz="compactionArena">
+        <figcaption>Figure 08 — Compaction Simulator: Compare Size-Tiered (STCS) vs. Leveled (LCS) compaction dynamics, SSTable key range overlaps, and disk space reclamation.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ====================================================================
+         PART III: BUFFER MANAGEMENT & OS I/O
+         ==================================================================== -->
+    <header class="part-header">
+      <span class="part-eyebrow">Part III</span>
+      <h2>Buffer Management &amp; OS I/O</h2>
+      <p class="part-desc">How database engines manage memory, bypass kernel overhead, and guarantee that modified pages reach non-volatile storage safely.</p>
+    </header>
+
+    <section class="chapter" id="buffer-pool">
+      <div class="ch-meta"><span class="ch-num">09</span><span class="ch-tag">Memory Management</span></div>
+      <h3>Buffer Pool Management &amp; Frame Tables</h3>
+      <p>A database management system cannot afford to let the OS kernel handle memory paging. The DBMS knows query execution plans, index traversal order, and transaction commit boundaries—the OS kernel knows none of this. The DBMS therefore allocates an explicit <strong>Buffer Pool</strong> in user-space RAM.</p>
+      <p>The Buffer Pool is divided into fixed-size <strong>Frames</strong>. An in-memory <strong>Page Table</strong> maps on-disk <code>PageID</code> to in-memory <code>FrameID</code>. Every frame tracks two critical metadata flags: the <strong>Pin Count</strong> (number of concurrent queries actively reading or modifying the frame) and the <strong>Dirty Bit</strong> (indicating in-memory changes not yet written to disk). A page can never be evicted while its pin count is greater than zero!</p>
+      <figure class="viz" data-viz="bufferPool">
+        <figcaption>Figure 09 — Buffer Pool Frame Table: Pin pages for active queries, dirty frames during update operations, and flush modified blocks to disk.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="eviction-policies">
+      <div class="ch-meta"><span class="ch-num">10</span><span class="ch-tag">Cache Eviction</span></div>
+      <h3>Page Eviction Policies: LRU-K &amp; 2Q</h3>
+      <p>Classic <strong>Least Recently Used (LRU)</strong> suffers from a devastating vulnerability: <em>Sequential Scan Pollution</em>. When a single large query performs a full table scan across a 100GB table, it reads each page exactly once—wiping out the entire hot cache of frequently accessed index root pages!</p>
+      <p>Production DBMSs employ scan-resistant algorithms like <strong>LRU-K (O'Neil et al.)</strong> and <strong>2Q (Johnson &amp; Shasha)</strong>. LRU-2 tracks the timestamp of the last <em>two</em> accesses to a page. A page accessed only once has a backward distance of $\infty$, ensuring one-time scan blocks are evicted immediately while hot items remain pinned in the active cache.</p>
+      <figure class="viz" data-viz="pageEviction">
+        <figcaption>Figure 10 — Eviction Policy Lab: Inject sequential scan workloads against Classic LRU vs. LRU-2 vs. 2Q to observe cache hit rates and scan resistance.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="direct-io">
+      <div class="ch-meta"><span class="ch-num">11</span><span class="ch-tag">OS Kernel Bypass</span></div>
+      <h3>Direct I/O (<code>O_DIRECT</code>) vs. Linux Page Cache &amp; <code>fsync</code></h3>
+      <p>When an application calls standard <code>write()</code> on Linux, the kernel copies the data into the <strong>OS Page Cache</strong> and marks the kernel page dirty. This creates two fatal problems for databases: <strong>Double Buffering</strong> (wasting half of system RAM caching pages in both DBMS buffer pool and Linux page cache) and <strong>Uncontrolled Flush Stalls</strong> (when kernel <code>pdflush</code> / <code>kswapd</code> suddenly freezes I/O to flush gigabytes of dirty memory).</p>
+      <p>High-performance engines (PostgreSQL with Direct I/O, MySQL InnoDB with <code>innodb_flush_method=O_DIRECT</code>) bypass the OS page cache entirely using the <code>O_DIRECT</code> flag. Direct I/O enables DMA (Direct Memory Access) transfers straight from the DBMS buffer pool to the NVMe controller.</p>
+      <figure class="viz" data-viz="directIoPageCache">
+        <figcaption>Figure 11 — Direct I/O vs Buffered I/O: Trace memory copies through the Linux kernel page cache vs direct DMA transfers to NVMe flash.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ====================================================================
+         PART IV: RECOVERY & TRANSACTIONS
+         ==================================================================== -->
+    <header class="part-header">
+      <span class="part-eyebrow">Part IV</span>
+      <h2>Recovery &amp; Transactions</h2>
+      <p class="part-desc">The mathematical invariants of durability and isolation: Write-Ahead Logging, ARIES crash recovery, Two-Phase Locking, and MVCC snapshot isolation.</p>
+    </header>
+
+    <section class="chapter" id="steal-force">
+      <div class="ch-meta"><span class="ch-num">12</span><span class="ch-tag">Durability Matrix</span></div>
+      <h3>Write-Ahead Logging &amp; The STEAL / NO-FORCE Matrix</h3>
+      <p>How a DBMS manages dirty buffer frames in relation to transaction commit defines the <strong>STEAL vs. FORCE</strong> trade-off space:</p>
+      <ul>
+        <li><strong>STEAL:</strong> Can the buffer manager write a dirty page to disk before the modifying transaction commits? If YES (STEAL), the system needs <strong>UNDO</strong> logging in case the transaction aborts. If NO (NO-STEAL), uncommitted changes stay in RAM, severely limiting transaction sizes.</li>
+        <li><strong>FORCE:</strong> Must all pages modified by a transaction be flushed to disk before the transaction commits? If YES (FORCE), commits require massive random disk writes. If NO (NO-FORCE), commits are instantaneous, but the system needs <strong>REDO</strong> logging to recover unwritten committed changes upon crash.</li>
+      </ul>
+      <p>Modern production databases universally implement <strong>STEAL + NO-FORCE</strong> with Write-Ahead Logging (WAL).</p>
+      <figure class="viz" data-viz="stealNoForce">
+        <figcaption>Figure 12 — The Buffer Recovery Matrix: Explore trade-offs across STEAL/NO-STEAL and FORCE/NO-FORCE configurations and their recovery requirements.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="aries-recovery">
+      <div class="ch-meta"><span class="ch-num">13</span><span class="ch-tag">Crash Recovery</span></div>
+      <h3>ARIES Crash Recovery: Analysis, Redo &amp; Undo</h3>
+      <p>Invented by C. Mohan at IBM, <strong>ARIES (Algorithms for Recovery and Isolation Exploiting Semantics)</strong> is the foundational crash-recovery algorithm used in enterprise DBMSs. Every log record carries a monotonically increasing <strong>Log Sequence Number (LSN)</strong>, and every on-disk data page carries a <code>pageLSN</code> recording the last update applied to it.</p>
+      <p>Upon crash, ARIES executes three sequential phases:</p>
+      <ol>
+        <li><strong>Analysis Phase:</strong> Scans the WAL forward from the last checkpoint to determine the state of the system at crash time, reconstructing the Dirty Page Table (DPT) and Transaction Table (TT).</li>
+        <li><strong>Redo Phase:</strong> "Repeats History" by scanning forward from the smallest <code>RecLSN</code> in the DPT and reapplying all logged updates (even those from uncommitted transactions) to restore the exact state at the crash point.</li>
+        <li><strong>Undo Phase:</strong> Scans backward reversing updates made by active loser transactions, writing <strong>Compensation Log Records (CLRs)</strong> to ensure recovery never cascades or undoes already undone work if a second crash occurs during recovery!</li>
+      </ol>
+      <figure class="viz" data-viz="ariesRecovery">
+        <figcaption>Figure 13 — ARIES 3-Phase Crash Recovery: Trigger a system crash, trace forward Analysis, forward Redo (Repeat History), and backward Undo with CLRs.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="two-phase-locking">
+      <div class="ch-meta"><span class="ch-num">14</span><span class="ch-tag">Concurrency Control</span></div>
+      <h3>Concurrency Control: Two-Phase Locking (2PL) &amp; Strict 2PL</h3>
+      <p>To guarantee Serializability (ACID isolation), transactions must follow <strong>Two-Phase Locking (2PL)</strong>. A transaction divides into two distinct phases: a <strong>Growing Phase</strong> (acquiring locks, no locks released) and a <strong>Shrinking Phase</strong> (releasing locks, no locks acquired).</p>
+      <p>However, basic 2PL suffers from <em>Cascading Aborts</em>: if Transaction 1 releases a lock early and Transaction 2 reads that uncommitted value, an abort of T1 forces an abort of T2. To prevent this, real databases use <strong>Strict 2PL (S2PL)</strong>: all Exclusive (X) locks must be held until the transaction finishes (COMMIT or ABORT).</p>
+      <figure class="viz" data-viz="twoPhaseLocking">
+        <figcaption>Figure 14 — Two-Phase Locking Simulator: Toggle between Basic 2PL and Strict 2PL, observe lock acquisition phases, and test cascading abort dynamics.</figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="mvcc">
+      <div class="ch-meta"><span class="ch-num">15</span><span class="ch-tag">Multi-Version Concurrency</span></div>
+      <h3>Multi-Version Concurrency Control (MVCC) &amp; Tuple Visibility</h3>
+      <p>Under lock-based concurrency, "readers block writers and writers block readers." <strong>Multi-Version Concurrency Control (MVCC)</strong> solves this fundamental bottleneck: readers never block writers, and writers never block readers!</p>
+      <p>In PostgreSQL and Oracle, updates do not modify tuples in place. Instead, the engine creates a new version of the row. Each tuple header stores two transaction identifiers: <code>xmin</code> (the transaction ID that created the tuple) and <code>xmax</code> (the transaction ID that deleted or superseded it). When a transaction reads under Snapshot Isolation, it consults its active transaction snapshot: a tuple is visible if and only if <code>xmin &le; Read_Snapshot</code> and (<code>xmax &gt; Read_Snapshot</code> or <code>xmax == 0</code>). Obsolete versions are later reclaimed by asynchronous background <code>VACUUM</code> workers.</p>
+      <figure class="viz" data-viz="mvccVisibility">
+        <figcaption>Figure 15 — MVCC Tuple Visibility Engine: Create row versions with xmin and xmax headers, inspect snapshot visibility across concurrent transactions, and trigger dead-tuple VACUUM.</figcaption>
+      </figure>
+    </section>
+
+  </main>
+</div>
+
+<footer class="site-foot">
+  <p><strong>Storage Engines &amp; Database Internals, Block by Block</strong> — An open-source interactive architectural guide.</p>
+  <p>Curricular sources: Alex Petrov (<em>Database Internals</em>), C. Mohan (<em>ARIES</em>), Stonebraker &amp; Hellerstein (<em>Readings in Database Systems</em>), PostgreSQL Global Development Group.</p>
+</footer>
+
+<script src="assets/core.js"></script>
+<script src="assets/viz-storage-media.js"></script>
+<script src="assets/viz-indexes-trees.js"></script>
+<script src="assets/viz-recovery-txns.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.OS && window.OS.boot) {
+      window.OS.boot();
+    }
+  });
+</script>
+</body>
+</html>
