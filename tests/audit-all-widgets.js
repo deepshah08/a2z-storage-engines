@@ -101,9 +101,124 @@ vizFiles.forEach(f => {
   eval(fs.readFileSync(path.join(assetsDir, f), 'utf8'));
 });
 
+
 const simNames = Object.keys(OS.registry);
+
+// ============================================================================
+// STAGE 1: DOCUMENT, TYPOGRAPHY & MATH FORMATTING AUDIT
+// ============================================================================
 console.log(`\n======================================================`);
-console.log(`RUNNING FULL AUTOMATED AUDIT ON ${simNames.length} VISUALIZERS`);
+console.log(`STAGE 1: DOCUMENT, TYPOGRAPHY & MATH FORMATTING AUDIT`);
+console.log(`======================================================\n`);
+
+let formattingErrors = [];
+const htmlPath = path.join(process.cwd(), 'index.html');
+const cssPath = path.join(process.cwd(), 'assets', 'style.css');
+
+if (!fs.existsSync(htmlPath)) {
+  formattingErrors.push('Missing index.html');
+} else {
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // 1. Math formulas vs KaTeX integration
+  const strippedHtml = html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(pre|code|script|style)[^>]*>[\s\S]*?<\/\1>/gi, '');
+
+  const inlineMath = strippedHtml.match(/\$([^\$\n\r]+)\$/g) || [];
+  const displayMath = strippedHtml.match(/\$\$([\s\S]+?)\$\$/g) || [];
+  const mathCount = inlineMath.length + displayMath.length;
+
+  if (mathCount > 0) {
+    const hasKatexCss = /katex(\.min)?\.css/i.test(html);
+    const hasKatexJs = /katex(\.min)?\.js/i.test(html);
+    const hasAutoRender = /auto-render(\.min)?\.js/i.test(html);
+    const hasRenderCall = /renderMathInElement/i.test(html) || /renderMath/i.test(html);
+
+    if (!hasKatexCss) {
+      formattingErrors.push(`Found ${mathCount} LaTeX math expressions, but KaTeX CSS is missing in index.html`);
+    }
+    if (!hasKatexJs) {
+      formattingErrors.push(`Found ${mathCount} LaTeX math expressions, but KaTeX JS is missing in index.html`);
+    }
+    if (!hasAutoRender) {
+      formattingErrors.push(`Found ${mathCount} LaTeX math expressions, but KaTeX auto-render extension is missing in index.html`);
+    }
+    if (!hasRenderCall) {
+      formattingErrors.push(`Found ${mathCount} LaTeX math expressions, but renderMathInElement initialization is missing in index.html/core.js`);
+    }
+    if (hasKatexCss && hasKatexJs && hasAutoRender && hasRenderCall) {
+      console.log(`  ✅ KaTeX Math Engine: Configured (${mathCount} expressions: ${inlineMath.length} inline, ${displayMath.length} display)`);
+    }
+  } else {
+    console.log(`  ℹ️ KaTeX Math Engine: No math expressions detected.`);
+  }
+
+  // 2. Chapter metadata formatting & separation (prevent glued tags like "01Physical Clocks")
+  const gluedMeta = html.match(/<span class="ch-num">[^<]+<\/span><span class="ch-tag">/g);
+  if (gluedMeta) {
+    formattingErrors.push(`Found ${gluedMeta.length} concatenated chapter metadata tags (<span class="ch-num">..</span><span class="ch-tag">..</span>). Add whitespace separation between spans.`);
+  } else {
+    const chMetaMatches = html.match(/class="ch-meta"/g) || [];
+    console.log(`  ✅ Chapter Metadata Typography: ${chMetaMatches.length} chapters verified (0 concatenated tags)`);
+  }
+
+  // 3. CSS rules validation
+  if (fs.existsSync(cssPath)) {
+    const css = fs.readFileSync(cssPath, 'utf8');
+    const chMetaCount = (html.match(/class="ch-meta"/g) || []).length;
+    if (chMetaCount > 0) {
+      if (!/\.ch-meta\s*\{[^}]*display\s*:\s*(inline-)?flex/i.test(css)) {
+        formattingErrors.push('Missing or non-flex CSS rule for .ch-meta in assets/style.css');
+      }
+      if (!/\.ch-tag\s*\{/i.test(css)) {
+        formattingErrors.push('Missing CSS rule for .ch-tag in assets/style.css');
+      }
+      if (!formattingErrors.some(e => e.includes('.ch-meta') || e.includes('.ch-tag'))) {
+        console.log(`  ✅ CSS Metadata Stylesheet Rules: .ch-meta (flex layout) and .ch-tag verified`);
+      }
+    }
+  }
+
+  // 4. Anchor integrity: TOC links to section IDs
+  const tocMatches = [...html.matchAll(/<a[^>]+href="#([^"]+)"[^>]*>/g)].map(m => m[1]);
+  let brokenAnchors = 0;
+  for (const anchor of tocMatches) {
+    if (anchor.startsWith('part-') || anchor === 'top') continue;
+    const re = new RegExp(`id=["']${anchor}["']`, 'i');
+    if (!re.test(html)) {
+      formattingErrors.push(`Broken TOC anchor: href="#${anchor}" has no matching id="${anchor}" in index.html`);
+      brokenAnchors++;
+    }
+  }
+  if (brokenAnchors === 0 && tocMatches.length > 0) {
+    console.log(`  ✅ TOC Navigation Anchors: All ${tocMatches.length} anchors resolve to existing section IDs`);
+  }
+
+  // 5. Visualizer Figure IDs vs registered visualizers
+  const vizFigures = [...html.matchAll(/data-viz="([^"]+)"/g)].map(m => m[1]);
+  let missingViz = 0;
+  for (const vName of vizFigures) {
+    if (!OS.registry[vName]) {
+      formattingErrors.push(`Figure has data-viz="${vName}", but "${vName}" is not registered in OS.registry`);
+      missingViz++;
+    }
+  }
+  if (missingViz === 0 && vizFigures.length > 0) {
+    console.log(`  ✅ Visualizer Bindings: All ${vizFigures.length} figure data-viz attributes match registered simulators`);
+  }
+}
+
+if (formattingErrors.length > 0) {
+  console.log(`\n❌ STAGE 1 FORMATTING AUDIT FAILED (${formattingErrors.length} issues):`);
+  formattingErrors.forEach(err => console.log(`   - ${err}`));
+  process.exit(1);
+} else {
+  console.log(`\n✨ STAGE 1 PASSED: All document formatting and math checks passed.\n`);
+}
+
+console.log(`======================================================`);
+console.log(`STAGE 2: INTERACTIVE SIMULATOR & VIEWPORT AUDIT (${simNames.length} VISUALIZERS)`);
 console.log(`======================================================\n`);
 
 let totalPassed = 0;

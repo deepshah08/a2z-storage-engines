@@ -323,6 +323,23 @@
 
       chapters.forEach((ch) => observer.observe(ch));
     }
+    // 4. Render LaTeX Math with KaTeX
+    const renderMath = () => {
+      if (typeof window.renderMathInElement === 'function') {
+        window.renderMathInElement(document.body, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false }
+          ],
+          throwOnError: false
+        });
+      }
+    };
+    if (typeof window.renderMathInElement === 'function') {
+      renderMath();
+    } else if (typeof window.addEventListener === 'function') {
+      window.addEventListener('load', renderMath);
+    }
   };
 
 })();
