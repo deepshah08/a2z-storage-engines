@@ -451,68 +451,176 @@ main { counter-reset: fig; }
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 12px 14px;
   align-items: center;
-  margin-top: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 .controls + .controls { margin-top: 10px; }
 
+/* Control Labels */
+.ctrl-label,
+.ctrl-slider label,
+.slider label,
+.ctrl-select label,
+.select label {
+  font-family: var(--font-body);
+  font-size: 0.80rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Standalone Buttons */
 .btn {
-  font: 500 0.86rem var(--font-body);
+  font: 600 0.82rem var(--font-body);
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 6px 14px;
   cursor: pointer;
   line-height: 1.3;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
-}
-.btn:hover { border-color: var(--faint); background: var(--sunk); }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: 0.45; cursor: default; }
-.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
-
-.seg {
   display: inline-flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { border-color: var(--faint); background: var(--surface); transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08); }
+.btn:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+.btn:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: none; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 2px 6px rgba(42, 82, 212, 0.25); }
+.btn.primary:hover { filter: brightness(1.08); box-shadow: 0 4px 12px rgba(42, 82, 212, 0.35); }
+
+/* Segmented Control (Pill Group) */
+.ctrl-segmented,
+.seg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+}
+
+.seg-track {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  overflow: hidden;
+  padding: 3px;
+  gap: 2px;
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.seg .btn { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 5px 12px; }
-.seg .btn:last-child { border-right: 0; }
-.seg .btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); font-weight: 600; }
 
+.seg-track button,
+.seg .btn,
+.ctrl-segmented button {
+  flex: 1 1 auto;
+  text-align: center;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--muted);
+  font: 500 0.78rem var(--font-body);
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  box-shadow: none;
+}
+
+.seg-track button:hover,
+.seg .btn:hover,
+.ctrl-segmented button:hover {
+  color: var(--ink);
+  background: rgba(125, 155, 255, 0.12);
+}
+
+.seg-track button:active,
+.seg .btn:active,
+.ctrl-segmented button:active {
+  transform: scale(0.98);
+}
+
+.seg-track button[aria-pressed="true"],
+.seg .btn[aria-pressed="true"],
+.ctrl-segmented button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(42, 82, 212, 0.35);
+}
+
+/* Sliders */
+.ctrl-slider,
 .slider {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.86rem;
-  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.slider label { white-space: nowrap; font-weight: 500; }
-.slider input[type="range"] { width: 130px; accent-color: var(--accent); cursor: pointer; }
+
+.ctrl-slider input[type="range"],
+.slider input[type="range"] {
+  width: 120px;
+  height: 6px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.ctrl-slider output,
 .slider output {
   font-family: var(--font-mono);
   font-size: 0.82rem;
-  color: var(--ink);
-  min-width: 3.6em;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 3.2em;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.select { display: inline-flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--muted); }
-.select select {
-  font: 0.86rem var(--font-body);
-  color: var(--ink);
+/* Dropdown Selects */
+.ctrl-select,
+.select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 5px 10px;
-  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
+
+.ctrl-select select,
+.select select {
+  font: 500 0.82rem var(--font-body);
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  padding: 2px 4px;
+}
+
 
 .readout {
   font-family: var(--font-mono);

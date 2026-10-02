@@ -129,17 +129,18 @@
   };
 
     OS.slider = (bar, o) => {
-    const wrap = OS.el("div", { class: "ctrl-slider" });
-    const lab = OS.el("label", { for: o.id, text: o.label });
+    const wrap = OS.el("div", { class: "ctrl-slider slider" });
+    const lblText = o.label ? (o.label.endsWith(':') ? o.label : o.label + ':') : '';
+    const lab = OS.el("label", { for: o.id || "", text: lblText });
     const inp = OS.el("input", {
       type: "range",
-      id: o.id,
+      id: o.id || "",
       min: o.min,
       max: o.max,
       step: o.step || 1,
       value: o.value
     });
-    const out = OS.el("output", { for: o.id });
+    const out = OS.el("output", { for: o.id || "" });
     const fmt = o.format || ((v) => v);
     const update = () => { out.textContent = fmt(parseFloat(inp.value)); };
     const trigger = () => {
@@ -161,11 +162,18 @@
   };
 
     OS.segmented = (bar, o) => {
-    const wrap = OS.el("div", { class: "ctrl-segmented", role: "group", "aria-label": o.label || "" });
+    const wrap = OS.el("div", { class: "ctrl-segmented seg", role: "group", "aria-label": o.label || "" });
+    if (o.label) {
+      const lblText = o.label.endsWith(':') ? o.label : o.label + ':';
+      const lab = OS.el("label", { class: "ctrl-label", text: lblText });
+      wrap.appendChild(lab);
+    }
+    const track = OS.el("div", { class: "seg-track" });
     const options = o.options || [];
     const btns = options.map((opt) => {
       const b = OS.el("button", {
         type: "button",
+        class: "btn-seg btn",
         text: opt.label,
         "aria-pressed": opt.value === o.value ? "true" : "false"
       });
@@ -174,9 +182,10 @@
         if (typeof o.onChange === "function") o.onChange(opt.value);
         if (typeof o.onInput === "function") o.onInput(opt.value);
       });
-      wrap.appendChild(b);
+      track.appendChild(b);
       return b;
     });
+    wrap.appendChild(track);
     function set(v) {
       btns.forEach((b, i) => b.setAttribute("aria-pressed", options[i] && options[i].value === v ? "true" : "false"));
     }
