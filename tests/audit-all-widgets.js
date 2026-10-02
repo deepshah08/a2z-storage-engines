@@ -55,6 +55,8 @@ global.document = {
       },
       getContext: () => ({
         save: () => {}, restore: () => {}, setTransform: () => {},
+        translate: (x, y) => checkCoords(x, y),
+        rotate: (ang) => checkCoords(ang),
         clearRect: () => {}, fillRect: (x, y, w, h) => checkCoords(x, y, w, h),
         strokeRect: (x, y, w, h) => checkCoords(x, y, w, h),
         beginPath: () => {}, arc: (x, y, r) => checkCoords(x, y, r),
@@ -62,6 +64,8 @@ global.document = {
         fill: () => {}, stroke: () => {},
         roundRect: (x, y, w, h) => checkCoords(x, y, w, h),
         moveTo: (x, y) => checkCoords(x, y), lineTo: (x, y) => checkCoords(x, y),
+        quadraticCurveTo: (cpx, cpy, x, y) => checkCoords(cpx, cpy, x, y),
+        bezierCurveTo: (cp1x, cp1y, cp2x, cp2y, x, y) => checkCoords(cp1x, cp1y, cp2x, cp2y, x, y),
         fillText: (txt, x, y) => checkCoords(x, y),
         measureText: (txt) => ({ width: String(txt).length * 7 }),
         setLineDash: () => {}
@@ -81,6 +85,7 @@ global.document = {
 };
 
 function checkCoords(...vals) {
+  global._totalCanvasDrawCalls = (global._totalCanvasDrawCalls || 0) + 1;
   for (const v of vals) {
     if (typeof v === 'number' && (isNaN(v) || !isFinite(v))) {
       throw new Error(`Invalid NaN/Infinite coordinate in canvas drawing: ${v}`);
@@ -100,7 +105,6 @@ const vizFiles = fs.readdirSync(assetsDir).filter(f => f.startsWith('viz-') && f
 vizFiles.forEach(f => {
   eval(fs.readFileSync(path.join(assetsDir, f), 'utf8'));
 });
-
 
 const simNames = Object.keys(OS.registry);
 
@@ -258,16 +262,22 @@ for (const name of simNames) {
       }
     }
     
-    // 2. Test sliders through range
+    // 2. Test sliders through range and assert active canvas reactivity
     for (const s of sliders) {
       const min = parseFloat(s.attributes.min || 0);
       const max = parseFloat(s.attributes.max || 100);
       const step = parseFloat(s.attributes.step || 1);
       
+      const beforeCalls = global._totalCanvasDrawCalls || 0;
       [min, (min + max) / 2, max].forEach(val => {
         s.value = String(val);
         s.dispatchEvent('input');
+        s.dispatchEvent('change');
       });
+      const afterCalls = global._totalCanvasDrawCalls || 0;
+      if (afterCalls <= beforeCalls) {
+        throw new Error(`Dead Slider Detected: Slider did not trigger any canvas drawing or redraw upon input/change! Check onChange/onInput wiring.`);
+      }
     }
     
     // 3. Test selects through all options

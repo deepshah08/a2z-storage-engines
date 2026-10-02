@@ -128,63 +128,64 @@
     return b;
   };
 
-  OS.slider = function (bar, o) {
-    const wrap = OS.el('span', { class: 'slider' });
-    const lab = OS.el('label', { for: o.id, text: o.label });
-    const inp = OS.el('input', {
-      type: 'range',
+    OS.slider = (bar, o) => {
+    const wrap = OS.el("div", { class: "ctrl-slider" });
+    const lab = OS.el("label", { for: o.id, text: o.label });
+    const inp = OS.el("input", {
+      type: "range",
       id: o.id,
       min: o.min,
       max: o.max,
       step: o.step || 1,
       value: o.value
     });
-    const out = OS.el('output', { for: o.id });
+    const out = OS.el("output", { for: o.id });
     const fmt = o.format || ((v) => v);
     const update = () => { out.textContent = fmt(parseFloat(inp.value)); };
-    inp.addEventListener('input', () => {
+    const trigger = () => {
       update();
-      if (o.onInput) o.onInput(parseFloat(inp.value));
-    });
+      const val = parseFloat(inp.value);
+      if (typeof o.onInput === "function") o.onInput(val);
+      if (typeof o.onChange === "function") o.onChange(val);
+    };
+    inp.addEventListener("input", trigger);
+    inp.addEventListener("change", trigger);
     update();
     wrap.append(lab, inp, out);
     bar.appendChild(wrap);
     return {
       input: inp,
       get value() { return parseFloat(inp.value); },
-      set(v) { inp.value = v; update(); }
+      set(v) { inp.value = v; trigger(); }
     };
   };
 
-  OS.segmented = function (bar, o) {
-    const wrap = OS.el('span', { class: 'seg', role: 'group', 'aria-label': o.label || 'Options' });
-    const btns = o.options.map((opt) => {
-      const b = OS.el('button', {
-        class: 'btn',
-        type: 'button',
+    OS.segmented = (bar, o) => {
+    const wrap = OS.el("div", { class: "ctrl-segmented", role: "group", "aria-label": o.label || "" });
+    const options = o.options || [];
+    const btns = options.map((opt) => {
+      const b = OS.el("button", {
+        type: "button",
         text: opt.label,
-        'aria-pressed': String(opt.value === o.value)
+        "aria-pressed": opt.value === o.value ? "true" : "false"
       });
-      b.addEventListener('click', () => {
+      b.addEventListener("click", () => {
         set(opt.value);
-        o.onChange(opt.value);
+        if (typeof o.onChange === "function") o.onChange(opt.value);
+        if (typeof o.onInput === "function") o.onInput(opt.value);
       });
       wrap.appendChild(b);
       return b;
     });
-
     function set(v) {
-      o.options.forEach((opt, i) => {
-        btns[i].setAttribute('aria-pressed', String(opt.value === v));
-      });
+      btns.forEach((b, i) => b.setAttribute("aria-pressed", options[i] && options[i].value === v ? "true" : "false"));
     }
-
     bar.appendChild(wrap);
     return { set };
   };
 
-  OS.select = function (bar, o, opts, cb) {
-    if (typeof o === 'string') {
+    OS.select = function (bar, o, opts, cb) {
+    if (typeof o === "string") {
       o = {
         label: o,
         options: opts || [],
@@ -192,12 +193,16 @@
         value: opts && opts[0] ? opts[0].value : undefined
       };
     }
-    const wrap = OS.el('span', { class: 'select' });
-    const lab = OS.el('label', { for: o.id || '', text: o.label });
-    const sel = OS.el('select', { id: o.id || '' });
-    (o.options || []).forEach((opt) => sel.appendChild(OS.el('option', { value: opt.value, text: opt.label })));
+    const wrap = OS.el("span", { class: "ctrl-select select" });
+    const lab = OS.el("label", { for: o.id || "", text: o.label || "" });
+    const sel = OS.el("select", { id: o.id || "" });
+    (o.options || []).forEach((opt) => sel.appendChild(OS.el("option", { value: opt.value, text: opt.label })));
     if (o.value !== undefined) sel.value = o.value;
-    sel.addEventListener('change', () => o.onChange && o.onChange(sel.value));
+    const trigger = () => {
+      if (typeof o.onChange === "function") o.onChange(sel.value);
+      if (typeof o.onInput === "function") o.onInput(sel.value);
+    };
+    sel.addEventListener("change", trigger);
     wrap.append(lab, sel);
     bar.appendChild(wrap);
     return sel;
@@ -323,6 +328,7 @@
 
       chapters.forEach((ch) => observer.observe(ch));
     }
+
     // 4. Render LaTeX Math with KaTeX
     const renderMath = () => {
       if (typeof window.renderMathInElement === 'function') {
