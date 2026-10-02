@@ -1,0 +1,79 @@
+name: CI/CD Pipeline & Quality Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit-and-test:
+    name: 3-Stage Quality Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Stage 1 & 2 — Static DOM, KaTeX & Interactive Reactivity Audit
+        run: node tests/audit-all-widgets.js
+
+      - name: Stage 3 — Headless Chrome E2E Audit & Compositor Raster
+        run: python3 tests/e2e-browser-audit.py
+
+      - name: Upload Viewport Raster Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-viewport-raster
+          path: /tmp/e2e-audit-render.png
+          if-no-files-found: ignore
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: audit-and-test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Post-Deployment HTTP Smoke Check
+        run: |
+          echo "Deployed to: ${{ steps.deployment.outputs.page_url }}"
+          curl --fail --silent --show-error --location "${{ steps.deployment.outputs.page_url }}" | grep -q "DOCTYPE html"
+          echo "✅ Live deployment verified with valid HTTP response"

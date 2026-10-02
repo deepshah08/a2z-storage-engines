@@ -1,0 +1,46 @@
+name: Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: 'Target Commit SHA to revert to (defaults to HEAD~1 if blank)'
+        required: false
+        default: ''
+      reason:
+        description: 'Reason for rollback'
+        required: false
+        default: 'Automated test failure or visual defect remediation'
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    name: Execute Git Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Revert Target Commit
+        run: |
+          if [ -z "${{ github.event.inputs.target_commit }}" ]; then
+            TARGET=$(git rev-parse HEAD)
+            echo "Reverting latest commit $TARGET..."
+            git revert --no-edit $TARGET
+          else
+            TARGET="${{ github.event.inputs.target_commit }}"
+            echo "Reverting specified commit $TARGET..."
+            git revert --no-edit $TARGET
+          fi
+          git push origin main
+          echo "✅ Rollback commit pushed to main. CI/CD will automatically test and redeploy."
