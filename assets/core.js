@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Storage Engines, Block by Block — Core Interactive Engine (core.js)
+   Operating Systems, Cycle by Cycle — Core Interactive Engine (core.js)
    ========================================================================== */
 
 (function () {
@@ -239,16 +239,18 @@
 
     function resize() {
       const rect = stage.getBoundingClientRect();
-      const w = Math.max(280, Math.floor(rect.width));
+      const w = Math.max(260, Math.floor(rect.width));
       const h = typeof opts.height === 'function' ? opts.height(w) : (opts.height || 260);
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const dpr = Math.min(window.devicePixelRatio || 1, 3.0);
 
       if (width !== w || height !== h || c.width !== Math.floor(w * dpr)) {
         width = w;
         height = h;
         c.width = Math.floor(w * dpr);
         c.height = Math.floor(h * dpr);
+        c.style.width = '100%';
         c.style.height = h + 'px';
+        c.style.display = 'block';
       }
 
       ctx.save();

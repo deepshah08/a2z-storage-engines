@@ -2,7 +2,8 @@
 """
 E2E Browser & Visual Quality Audit Harness
 Validates real browser execution, KaTeX math parsing, Canvas DOM lifecycle,
-and segmented control state under headless Chrome / Chromium.
+segmented control state, and mobile responsiveness (iPhone 15 & Pixel 9 Pro XL)
+under headless Chrome / Chromium.
 """
 
 import os
@@ -10,6 +11,8 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import json
+import re
 
 def find_chrome():
     candidates = [
@@ -28,6 +31,81 @@ def find_chrome():
         if p:
             return p
     return None
+
+def check_mobile_viewport(chrome, html_path, width, height, device_name):
+    wrapper = f'''<!doctype html>
+<html><body style="margin:0;background:#000">
+<iframe id="phone" style="width:{width}px;height:{height}px;border:none;display:block" src="file://{html_path}"></iframe>
+<script>
+const frame = document.getElementById('phone');
+frame.onload = () => {{
+  try {{
+    const fdoc = frame.contentDocument;
+    const fwin = frame.contentWindow;
+    const sw = fdoc.documentElement.scrollWidth;
+    const iw = fwin.innerWidth;
+    function isContained(el) {{
+      let p = el.parentElement;
+      while (p && p !== fdoc.body && p !== fdoc.documentElement) {{
+        const cs = fwin.getComputedStyle(p);
+        if (cs.overflowX === 'auto' || cs.overflowX === 'scroll' || cs.overflowX === 'hidden' || cs.overflow === 'hidden') return true;
+        p = p.parentElement;
+      }}
+      return false;
+    }}
+    const uncontained = [];
+    fdoc.querySelectorAll('*').forEach(el => {{
+      const r = el.getBoundingClientRect();
+      if (r.right > iw + 1 && r.width > 0 && !isContained(el)) {{
+        uncontained.push({{ tag: el.tagName, cls: (el.className || '').toString().slice(0, 30), right: Math.round(r.right) }});
+      }}
+    }});
+    const res = document.createElement('div');
+    res.id = 'MOBILE_AUDIT';
+    res.textContent = JSON.stringify({{ iw, sw, hasOverflow: sw > iw, uncontainedCount: uncontained.length, uncontained: uncontained.slice(0, 5) }});
+    document.body.appendChild(res);
+  }} catch(e) {{
+    const res = document.createElement('div');
+    res.id = 'MOBILE_AUDIT';
+    res.textContent = JSON.stringify({{ error: e.message }});
+    document.body.appendChild(res);
+  }}
+}};
+</script></body></html>'''
+    tmp = tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8')
+    tmp.write(wrapper)
+    tmp.close()
+    cmd = [
+        chrome,
+        '--headless=new', '--disable-gpu', '--no-sandbox',
+        '--disable-remote-fonts', '--disable-dev-shm-usage',
+        '--allow-file-access-from-files',
+        f'--window-size={max(500, width + 50)},{height + 50}',
+        '--dump-dom',
+        f'file://{tmp.name}'
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    finally:
+        if os.path.exists(tmp.name):
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+    m = re.search(r'<div id="MOBILE_AUDIT">(.*?)</div>', res.stdout)
+    if m:
+        data = json.loads(m.group(1))
+        if data.get('error'):
+            print(f'❌ FAIL: {device_name} audit error: {data["error"]}')
+            return False
+        if data.get('hasOverflow') or data.get('uncontainedCount', 0) > 0:
+            print(f'❌ FAIL: {device_name} horizontal overflow detected: {data}')
+            return False
+        print(f'  ✅ {device_name} Viewport ({width}x{height}): Zero horizontal blowout, 100% contained')
+        return True
+    print(f'❌ FAIL: {device_name} mobile audit failed to execute')
+    return False
 
 def run_audit():
     chrome = find_chrome()
@@ -54,6 +132,7 @@ def run_audit():
         "--headless=new",
         "--disable-gpu",
         "--no-sandbox",
+        "--disable-remote-fonts",
         "--disable-dev-shm-usage",
         "--disable-features=Translate,OptimizationHints,MediaRouter",
         "--dump-dom",
@@ -123,6 +202,7 @@ def run_audit():
         "--headless=new",
         "--disable-gpu",
         "--no-sandbox",
+        "--disable-remote-fonts",
         "--disable-dev-shm-usage",
         "--disable-features=Translate,OptimizationHints,MediaRouter",
         f"--screenshot={screenshot_path}",
@@ -139,7 +219,15 @@ def run_audit():
     except Exception as e:
         print(f"⚠️ Screenshot test skipped: {e}")
 
-    print("\n✨ STAGE 3 PASSED: Real browser execution, KaTeX math, and DOM lifecycle verified.\n")
+    # Audit 6: Mobile Viewport Audit (iPhone 15 - 393x852)
+    if not check_mobile_viewport(chrome, html_path, 393, 852, "iPhone 15"):
+        return 1
+
+    # Audit 7: Mobile Viewport Audit (Pixel 9 Pro XL - 448x996)
+    if not check_mobile_viewport(chrome, html_path, 448, 996, "Pixel 9 Pro XL"):
+        return 1
+
+    print("\n✨ STAGE 3 PASSED: Real browser execution, KaTeX math, DOM lifecycle, and mobile viewports verified.\n")
     return 0
 
 if __name__ == "__main__":
